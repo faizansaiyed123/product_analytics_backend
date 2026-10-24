@@ -158,7 +158,6 @@ async def test_project_soft_delete_stops_ingestion(owner, ingest):
     assert (await ingest(owner["api_key"], [{"event": "e", "distinct_id": "u"}])).status_code == 401
 
 
-@pytest.mark.parametrize("confirm,status", [("wrong", 422), ("Web App", 202)])
 async def test_person_erasure_removes_profile_and_all_events(owner, ingest):
     from uuid import UUID
 
@@ -194,6 +193,7 @@ async def test_person_erasure_removes_profile_and_all_events(owner, ingest):
     assert person_count == 0 and event_count == 0
 
 
+@pytest.mark.parametrize("confirm,status", [("wrong", 422), ("Web App", 202)])
 async def test_purge_requires_project_name_confirmation(owner, confirm, status):
     r = await owner["client"].post(f"/api/v1/projects/{owner['project_id']}/data/purge", json={"confirm_name": confirm})
     assert r.status_code == status
