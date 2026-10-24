@@ -46,6 +46,32 @@ async def test_login_errors_do_not_reveal_which_part_was_wrong(client, new_clien
     assert r1.json()["error"]["message"] == r2.json()["error"]["message"]
 
 
+async def test_change_password_updates_hash_and_revokes_other_sessions(client, new_client):
+    await register(client, "change-password@example.com")
+    other = new_client()
+    assert (await other.post("/api/v1/auth/login", json={"email": "change-password@example.com", "password": PASSWORD})).status_code == 200
+
+    changed = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": PASSWORD, "new_password": "BrandNewPass99"},
+    )
+    assert changed.status_code == 200
+    assert (await client.get("/api/v1/auth/me")).status_code == 200  # current session is retained
+    assert (await other.get("/api/v1/auth/me")).status_code == 401  # other sessions are revoked
+
+    wrong_current = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": PASSWORD, "new_password": "AnotherPass123"},
+    )
+    assert wrong_current.status_code == 400
+    assert wrong_current.json()["error"]["code"] == "INVALID_CREDENTIALS"
+
+    fresh = new_client()
+    old_login = await fresh.post("/api/v1/auth/login", json={"email": "change-password@example.com", "password": PASSWORD})
+    new_login = await fresh.post("/api/v1/auth/login", json={"email": "change-password@example.com", "password": "BrandNewPass99"})
+    assert old_login.status_code == 401 and new_login.status_code == 200
+
+
 async def test_csrf_required_for_unsafe_methods(client):
     await register(client, "csrf@example.com", "Org")
     r = await client.post("/api/v1/organizations", json={"name": "X"}, headers={"x-csrf-token": "bad"})
@@ -114,7 +140,7 @@ async def test_email_verification_flow(client):
     assert (await client.get("/api/v1/auth/me")).json()["user"]["email_verified"] is True
 
 
-@pytest.mark.parametrize("path", ["/health", "/ready"])
+@pytest.mark.parametrize("path", ["/health", "/ready", "/metrics"])
 async def test_health_endpoints(client, path):
     r = await client.get(path)
     assert r.status_code == 200
