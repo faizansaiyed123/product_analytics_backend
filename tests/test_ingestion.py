@@ -322,7 +322,7 @@ async def test_rate_limit_returns_429_with_headers_and_is_per_project(owner, ing
     assert codes.count(200) >= 3 and 429 in codes
     limited = next(response for response in responses if response.status_code == 429)
     assert limited.headers["retry-after"] and limited.headers["x-ratelimit-limit"] == "3"
-    assert r.json()["error"]["code"] == "RATE_LIMITED"
+    assert limited.json()["error"]["code"] == "RATE_LIMITED"
 
 
 async def test_usage_counters_are_reported(owner, ingest):
