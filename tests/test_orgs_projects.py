@@ -158,6 +158,41 @@ async def test_project_soft_delete_stops_ingestion(owner, ingest):
     assert (await ingest(owner["api_key"], [{"event": "e", "distinct_id": "u"}])).status_code == 401
 
 
+async def test_person_erasure_removes_profile_and_all_events(owner, ingest):
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    from app.db.session import get_sessionmaker
+    from app.models import Event, Person
+
+    c, pid, key = owner["client"], owner["project_id"], owner["api_key"]
+    response = await ingest(key, [
+        {"event": "purchase", "distinct_id": "right-to-erasure", "properties": {"plan": "pro"}},
+        {"event": "login", "distinct_id": "right-to-erasure"},
+    ])
+    assert response.status_code == 200 and response.json()["accepted"] == 2
+
+    people = (await c.get("/api/v1/users", params={"project_id": pid})).json()["items"]
+    person = next(p for p in people if p["distinct_ids"] == ["right-to-erasure"])
+    assert (await c.get(f"/api/v1/users/{person['id']}")).status_code == 200
+
+    erased = await c.delete(f"/api/v1/projects/{pid}/persons/{person['id']}")
+    assert erased.status_code == 200
+    assert (await c.get(f"/api/v1/users/{person['id']}")).status_code == 404
+    remaining = (await c.get("/api/v1/events", params={"project_id": pid, "distinct_id": "right-to-erasure"})).json()
+    assert remaining["items"] == []
+
+    async with get_sessionmaker()() as session:
+        person_count = await session.scalar(
+            select(func.count()).select_from(Person).where(Person.id == UUID(person["id"]), Person.project_id == UUID(pid))
+        )
+        event_count = await session.scalar(
+            select(func.count()).select_from(Event).where(Event.project_id == UUID(pid), Event.person_id == UUID(person["id"]))
+        )
+    assert person_count == 0 and event_count == 0
+
+
 @pytest.mark.parametrize("confirm,status", [("wrong", 422), ("Web App", 202)])
 async def test_purge_requires_project_name_confirmation(owner, confirm, status):
     r = await owner["client"].post(f"/api/v1/projects/{owner['project_id']}/data/purge", json={"confirm_name": confirm})
