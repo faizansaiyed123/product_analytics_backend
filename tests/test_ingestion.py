@@ -315,12 +315,13 @@ async def test_rate_limit_returns_429_with_headers_and_is_per_project(owner, ing
     from app.core.redis import get_redis
 
     await get_redis().flushdb()
-    codes = []
+    responses = []
     for _ in range(8):
-        r = await ingest(key, [{"event": "e", "distinct_id": "u"}])
-        codes.append(r.status_code)
+        responses.append(await ingest(key, [{"event": "e", "distinct_id": "u"}]))
+    codes = [response.status_code for response in responses]
     assert codes.count(200) >= 3 and 429 in codes
-    assert r.headers["retry-after"] and r.headers["x-ratelimit-limit"] == "3"
+    limited = next(response for response in responses if response.status_code == 429)
+    assert limited.headers["retry-after"] and limited.headers["x-ratelimit-limit"] == "3"
     assert r.json()["error"]["code"] == "RATE_LIMITED"
 
 
