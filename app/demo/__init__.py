@@ -1,0 +1,1 @@
+"""Standalone in-memory demo backend.\n\nThis package intentionally does not import the production database, Redis,\nauthentication, ingestion, or worker stack.\n"""\n
